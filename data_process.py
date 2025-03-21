@@ -13,6 +13,8 @@ from configs import *
 
 from datetime import datetime
 
+from bigram_calculator import calculate_screen_name_likelihood
+
 
 """
 {
@@ -264,5 +266,55 @@ def process_cresci():
     )
 
 
+def feature_preparation():
+    for dataset in SELECTED_TRAINING_DATASET + SELECTED_VALIDATING_DATASET:
+        df = pd.read_parquet(os.path.join(DATASET_DIR, f"{dataset}.parquet"))
+
+        df["tweet_freq"] = df["statuses_count"] / df["user_age"]
+        df["followers_growth_rate"] = df["followers_count"] / df["user_age"]
+        df["friends_growth_rate"] = df["friends_count"] / df["user_age"]
+        df["listed_growth_rate"] = df["listed_count"] / df["user_age"]
+        df["followers_friends_ratio"] = df["followers_count"] / df["friends_count"]
+        df["screen_name_length"] = df["screen_name"].apply(lambda x: len(x))
+        df["num_digits_in_screen_name"] = df["screen_name"].apply(
+            lambda x: sum(c.isdigit() for c in x)
+        )
+        df["name_length"] = df["name"].apply(lambda x: len(x))
+        df["num_digits_in_name"] = df["name"].apply(
+            lambda x: sum(c.isdigit() for c in x)
+        )
+        df["screen_name_likelihood"] = df["screen_name"].apply(
+            calculate_screen_name_likelihood
+        )
+
+        df = df[
+            [
+                "id",
+                "statuses_count",
+                "followers_count",
+                "friends_count",
+                "listed_count",
+                "verified",
+                "tweet_freq",
+                "followers_growth_rate",
+                "friends_growth_rate",
+                "listed_growth_rate",
+                "followers_friends_ratio",
+                "screen_name_length",
+                "num_digits_in_screen_name",
+                "name_length",
+                "num_digits_in_name",
+                "screen_name_likelihood",
+                "is_bot",
+            ]
+        ]
+
+        df.to_parquet(
+            os.path.join(DATASET_DIR, f"{dataset}_features.parquet"),
+            engine="fastparquet",
+            index=False,
+        )
+
+
 if __name__ == "__main__":
-    process_cresci()
+    feature_preparation()
