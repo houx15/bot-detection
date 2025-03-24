@@ -235,6 +235,16 @@ def process_cresci():
             user_data["probe_time"] - user_data["created_at"]
         ).dt.total_seconds() / 3600
 
+        # verified 用0填充缺失值
+        user_data["verified"].fillna(0, inplace=True)
+
+        # print(user_data["verified"].value_counts())
+        # print(user_data["verified"].isnull().sum())
+
+        # # 有多少个friends_count是0
+        # print(user_data["friends_count"].value_counts())
+        # print(user_data["friends_count"].isnull().sum())
+
         user_data = user_data[
             [
                 "id",
@@ -270,11 +280,15 @@ def feature_preparation():
     for dataset in SELECTED_TRAINING_DATASET + SELECTED_VALIDATING_DATASET:
         df = pd.read_parquet(os.path.join(DATASET_DIR, f"{dataset}.parquet"))
 
+        df.fillna({"name": "", "screen_name": ""}, inplace=True)
+
         df["tweet_freq"] = df["statuses_count"] / df["user_age"]
         df["followers_growth_rate"] = df["followers_count"] / df["user_age"]
         df["friends_growth_rate"] = df["friends_count"] / df["user_age"]
         df["listed_growth_rate"] = df["listed_count"] / df["user_age"]
-        df["followers_friends_ratio"] = df["followers_count"] / df["friends_count"]
+        df["followers_friends_ratio"] = df["followers_count"] / (
+            df["friends_count"] + 1
+        )
         df["screen_name_length"] = df["screen_name"].apply(lambda x: len(x))
         df["num_digits_in_screen_name"] = df["screen_name"].apply(
             lambda x: sum(c.isdigit() for c in x)
@@ -289,7 +303,6 @@ def feature_preparation():
 
         df = df[
             [
-                "id",
                 "statuses_count",
                 "followers_count",
                 "friends_count",
@@ -317,4 +330,5 @@ def feature_preparation():
 
 
 if __name__ == "__main__":
+    # process_cresci()
     feature_preparation()
