@@ -228,6 +228,7 @@ if __name__ == "__main__":
 
     # # 用模型预测新数据
     # new_data = pd.DataFrame(...)  # 替换为你的新数据
+    # best_model = joblib.load(output_path)
     # predictions, probabilities = predict_with_model(best_model, new_data)
     # print("Predictions:", predictions)
     # print("Probabilities:", probabilities)
