@@ -174,32 +174,6 @@ def train_random_forest_with_hebo(
     return best_model, best_params, avg_scores
 
 
-# 预测函数
-def predict_with_model(model, new_data):
-    X_new = new_data[
-        [
-            "statuses_count",
-            "followers_count",
-            "friends_count",
-            "listed_count",
-            "verified",
-            "tweet_freq",
-            "followers_growth_rate",
-            "friends_growth_rate",
-            "listed_growth_rate",
-            "followers_friends_ratio",
-            "screen_name_length",
-            "num_digits_in_screen_name",
-            "name_length",
-            "num_digits_in_name",
-            "screen_name_likelihood",
-        ]
-    ]
-    predictions = model.predict(X_new)
-    probabilities = model.predict_proba(X_new)[:, 1]
-    return predictions, probabilities
-
-
 # 主函数
 if __name__ == "__main__":
     # 加载和预处理数据
