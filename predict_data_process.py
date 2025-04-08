@@ -5,6 +5,7 @@ import ijson
 import gc
 
 import tarfile
+import gzip
 import pickle
 import time
 
@@ -17,16 +18,18 @@ from tqdm import tqdm
 
 from utils import log_error
 
+from configs import *
 
-data_dir = "/mnt/disk-ccc-covid3-llm/data-tweet-curation"
 
-targz_dir = "/mnt/disk-ccc-covid3-llm/data-tweet"
+data_dir = ""
 
-base_dir = "/mnt/disk-ccc-covid3-llm/bot-detection"
+targz_dir = ""
 
-profile_dir = "/mnt/disk-ccc-covid3-llm/data-profile"
+base_dir = BASE_DIR
 
-profile_curation_dir = "/mnt/disk-ccc-covid3-llm/data-profile-curation"
+profile_dir = PROFILE_DIR
+
+profile_curation_dir = ""
 
 feature_dir = os.path.join(base_dir, "user_features")
 
@@ -34,8 +37,8 @@ topics = ["abortion", "climate-change", "gun", "sexual-orientation"]
 # topics = ["climate-change", "gun", "sexual-orientation"]
 
 
-text_dir = "/mnt/disk-ccc-covid3-llm/data-tweet"
-relevance_dir = "/mnt/disk-ccc-covid3-llm/data-relevance"
+text_dir = ""
+relevance_dir = ""
 
 text_folder_mapping = {
     "gun": "gun-opinion",
@@ -304,6 +307,26 @@ def get_all_tar_file_index():
             generate_single_tar_file_index(tar_path, index_file_path)
 
 
+def convert_time_format(input_time: str) -> str:
+    """
+    将时间从格式 'Fri May 25 13:18:07 +0000 2018' 转换为 '2006-07-15T08:41:38.000Z'
+
+    :param input_time: 输入的时间字符串
+    :return: 转换后的时间字符串
+    """
+    # 定义输入时间格式
+    input_format = "%a %b %d %H:%M:%S %z %Y"
+    # 定义目标时间格式
+    output_format = "%Y-%m-%dT%H:%M:%S.%fZ"
+
+    # 解析输入时间字符串
+    parsed_time = datetime.strptime(input_time, input_format)
+    # 转换为目标格式
+    output_time = parsed_time.strftime(output_format)
+
+    return output_time
+
+
 profile_zip_files = [
     "v2-2023feb",
     "v2-2022dec",
@@ -313,6 +336,7 @@ profile_zip_files = [
     "v2-2022apr",
     "v2-2021oct",
     "v2-2021dec",
+    "v1-2020aug",
 ]
 
 
@@ -330,38 +354,80 @@ class ExtractUserInfo(object):
 
     def extract_from_file(self, user_id, file_obj, mtime):
         """
-        v1
-        data-profile-curation/home/junming/virus/data-twitter-profile-v1-2020aug/userid-1000003075590025217.json.gz
-
-        {'id': 1000003075590025217, 'id_str': '1000003075590025217', 'name': 'jah kirae 👨\u200d❤️\u200d💋\u200d👨', 'screen_name': 'CardiB_Romania', 'location': 'The fiery pits of Romania', 'description': 'mad? hurt? aww... well, have a good day! bye! | backup acc @jah_TheSequel | not affiliated with any celebrities', 'url': None, 'entities': {'description': {'urls': []}}, 'protected': False, 'followers_count': 635, 'friends_count': 524, 'listed_count': 5, 'created_at': 'Fri May 25 13:18:07 +0000 2018', 'favourites_count': 66471, 'utc_offset': None, 'time_zone': None, 'geo_enabled': False, 'verified': False, 'statuses_count': 13545, 'lang': None, 'status': {'created_at': 'Wed Aug 26 20:18:05 +0000 2020', 'id': 1298716368821350406, 'id_str': '1298716368821350406', 'full_text': '@BODAKRICCH WAP promo gc?', 'truncated': False, 'display_text_range': [12, 25], 'entities': {'hashtags': [], 'symbols': [], 'user_mentions': [{'screen_name': 'BODAKRICCH', 'name': 'deja🤍 | #BLM', 'id': 1173386806051713027, 'id_str': '1173386806051713027', 'indices': [0, 11]}], 'urls': []}, 'source': '<a href="http://twitter.com/download/android" rel="nofollow">Twitter for Android</a>', 'in_reply_to_status_id': 1298716005867241478, 'in_reply_to_status_id_str': '1298716005867241478', 'in_reply_to_user_id': 1173386806051713027, 'in_reply_to_user_id_str': '1173386806051713027', 'in_reply_to_screen_name': 'BODAKRICCH', 'geo': None, 'coordinates': None, 'place': None, 'contributors': None, 'is_quote_status': False, 'retweet_count': 0, 'favorite_count': 0, 'favorited': False, 'retweeted': False, 'lang': 'en'}, 'contributors_enabled': False, 'is_translator': False, 'is_translation_enabled': False, 'profile_background_color': '000000', 'profile_background_image_url': 'http://abs.twimg.com/images/themes/theme1/bg.png', 'profile_background_image_url_https': 'https://abs.twimg.com/images/themes/theme1/bg.png', 'profile_background_tile': False, 'profile_image_url': 'http://pbs.twimg.com/profile_images/1291601019349217285/ytNxDnJ3_normal.jpg', 'profile_image_url_https': 'https://pbs.twimg.com/profile_images/1291601019349217285/ytNxDnJ3_normal.jpg', 'profile_banner_url': 'https://pbs.twimg.com/profile_banners/1000003075590025217/1596776656', 'profile_link_color': '6700B3', 'profile_sidebar_border_color': '000000', 'profile_sidebar_fill_color': '000000', 'profile_text_color': '000000', 'profile_use_background_image': False, 'has_extended_profile': True, 'default_profile': False, 'default_profile_image': False, 'following': False, 'follow_request_sent': False, 'notifications': False, 'translator_type': 'none'}
 
         v2
         data-twitter-profile-v2-2023feb/1000-profile.pickle4
 
         {'username': 'percep2al', 'name': 'Jordy Mont-Reynaud', 'public_metrics': {'followers_count': 6051, 'following_count': 225, 'tweet_count': 97, 'listed_count': 43}, 'id': '1000', 'profile_image_url': 'https://pbs.twimg.com/profile_images/1511727588045209601/QAToVCGo_normal.jpg', 'verified': False, 'created_at': '2006-07-15T08:41:38.000Z'}
         """
-        profile = pickle.load(file_obj)
-        self.user_infos.append(
-            {
-                "id": user_id,
-                "name": profile["name"],
-                "screen_name": profile["username"],
-                "created_at": profile["created_at"],
-                "followers_count": profile["public_metrics"]["followers_count"],
-                "friends_count": profile["public_metrics"]["following_count"],
-                "listed_count": profile["public_metrics"]["listed_count"],
-                "statuses_count": profile["public_metrics"]["tweet_count"],
-                "verified": profile["verified"],
-                "crawled_at": mtime,
-            }
-        )
+        try:
+            profile = pickle.load(file_obj)
+            self.user_infos.append(
+                {
+                    "id": user_id,
+                    "name": profile["name"],
+                    "screen_name": profile["username"],
+                    "created_at": profile["created_at"],
+                    "followers_count": profile["public_metrics"]["followers_count"],
+                    "friends_count": profile["public_metrics"]["following_count"],
+                    "listed_count": profile["public_metrics"]["listed_count"],
+                    "statuses_count": profile["public_metrics"]["tweet_count"],
+                    "verified": profile["verified"],
+                    "crawled_at": mtime,
+                }
+            )
 
-        self.matched_users.add(user_id)
-        # pop out from user_ids
-        self.user_ids.remove(user_id)
+            self.matched_users.add(user_id)
+            # pop out from user_ids
+            self.user_ids.remove(user_id)
 
-        if len(self.user_infos) >= self.save_threshold:
-            self.save_user_info()
+            if len(self.user_infos) >= self.save_threshold:
+                self.save_user_info()
+
+            return "success"
+        except Exception as e:
+            print(f"Error processing {user_id}: {e}")
+            log_error(f"Error processing {user_id}: {e}")
+            return "fail"
+
+    def extract_from_file_v1(self, user_id, file_obj, mtime):
+        """
+
+        v1
+        data-profile-curation/home/junming/virus/data-twitter-profile-v1-2020aug/userid-1000003075590025217.json.gz
+
+        {'id': 1000003075590025217, 'id_str': '1000003075590025217', 'name': 'jah kirae 👨\u200d❤️\u200d💋\u200d👨', 'screen_name': 'CardiB_Romania', 'location': 'The fiery pits of Romania', 'description': 'mad? hurt? aww... well, have a good day! bye! | backup acc @jah_TheSequel | not affiliated with any celebrities', 'url': None, 'entities': {'description': {'urls': []}}, 'protected': False, 'followers_count': 635, 'friends_count': 524, 'listed_count': 5, 'created_at': 'Fri May 25 13:18:07 +0000 2018', 'favourites_count': 66471, 'utc_offset': None, 'time_zone': None, 'geo_enabled': False, 'verified': False, 'statuses_count': 13545, 'lang': None, 'status': {'created_at': 'Wed Aug 26 20:18:05 +0000 2020', 'id': 1298716368821350406, 'id_str': '1298716368821350406', 'full_text': '@BODAKRICCH WAP promo gc?', 'truncated': False, 'display_text_range': [12, 25], 'entities': {'hashtags': [], 'symbols': [], 'user_mentions': [{'screen_name': 'BODAKRICCH', 'name': 'deja🤍 | #BLM', 'id': 1173386806051713027, 'id_str': '1173386806051713027', 'indices': [0, 11]}], 'urls': []}, 'source': '<a href="http://twitter.com/download/android" rel="nofollow">Twitter for Android</a>', 'in_reply_to_status_id': 1298716005867241478, 'in_reply_to_status_id_str': '1298716005867241478', 'in_reply_to_user_id': 1173386806051713027, 'in_reply_to_user_id_str': '1173386806051713027', 'in_reply_to_screen_name': 'BODAKRICCH', 'geo': None, 'coordinates': None, 'place': None, 'contributors': None, 'is_quote_status': False, 'retweet_count': 0, 'favorite_count': 0, 'favorited': False, 'retweeted': False, 'lang': 'en'}, 'contributors_enabled': False, 'is_translator': False, 'is_translation_enabled': False, 'profile_background_color': '000000', 'profile_background_image_url': 'http://abs.twimg.com/images/themes/theme1/bg.png', 'profile_background_image_url_https': 'https://abs.twimg.com/images/themes/theme1/bg.png', 'profile_background_tile': False, 'profile_image_url': 'http://pbs.twimg.com/profile_images/1291601019349217285/ytNxDnJ3_normal.jpg', 'profile_image_url_https': 'https://pbs.twimg.com/profile_images/1291601019349217285/ytNxDnJ3_normal.jpg', 'profile_banner_url': 'https://pbs.twimg.com/profile_banners/1000003075590025217/1596776656', 'profile_link_color': '6700B3', 'profile_sidebar_border_color': '000000', 'profile_sidebar_fill_color': '000000', 'profile_text_color': '000000', 'profile_use_background_image': False, 'has_extended_profile': True, 'default_profile': False, 'default_profile_image': False, 'following': False, 'follow_request_sent': False, 'notifications': False, 'translator_type': 'none'}
+        """
+        try:
+            with gzip.open(file_obj, "rt", encoding="utf-8") as f:
+                profile = json.load(f)
+            self.user_infos.append(
+                {
+                    "id": user_id,
+                    "name": profile["name"],
+                    "screen_name": profile["screen_name"],
+                    "created_at": convert_time_format(profile["created_at"]),
+                    "followers_count": profile["followers_count"],
+                    "friends_count": profile["friends_count"],
+                    "listed_count": profile["listed_count"],
+                    "statuses_count": profile["statuses_count"],
+                    "verified": profile["verified"],
+                    "crawled_at": mtime,
+                }
+            )
+
+            self.matched_users.add(user_id)
+            # pop out from user_ids
+            self.user_ids.remove(user_id)
+
+            if len(self.user_infos) >= self.save_threshold:
+                self.save_user_info()
+
+            return "success"
+        except Exception as e:
+            print(f"Error processing {user_id}: {e}")
+            log_error(f"Error processing {user_id}: {e}")
+            return "fail"
 
     def format_info_to_feature(self, df):
         df["created_at"] = pd.to_datetime(
@@ -491,7 +557,10 @@ class ExtractUserInfo(object):
 
             i = 0
             new_user = 0
-            target_start = 10000000
+            target_start = 0
+
+            if single_tar_file == "v2-2023feb":
+                target_start = 33400000
 
             with tarfile.open(tar_path, "r:gz") as tar:
                 member = tar.next()
@@ -509,8 +578,21 @@ class ExtractUserInfo(object):
                             f"Processed {i} files in {single_tar_file}, added {new_user} new users"
                         )
                         gc.collect()
-                    if member.isfile() and member.name.endswith(".pickle4"):
-                        user_id = member.name.split("/")[-1].split("-")[0]
+                    if "v1" in single_tar_file:
+                        process_flag = member.isfile() and member.name.endswith(
+                            ".json.gz"
+                        )
+                    else:
+                        process_flag = member.isfile() and member.name.endswith(
+                            ".pickle4"
+                        )
+                    if process_flag:
+                        if "v1" in single_tar_file:
+                            user_id = (
+                                member.name.split("/")[-1].split("-")[1].split(".")[0]
+                            )
+                        else:
+                            user_id = member.name.split("/")[-1].split("-")[0]
                         if user_id not in self.user_ids:
                             member = tar.next()
                             continue
@@ -524,8 +606,13 @@ class ExtractUserInfo(object):
                         with file_obj:
                             # 读取文件的修改时间
                             mtime = member.mtime
-                            self.extract_from_file(user_id, file_obj, mtime)
-                            new_user += 1
+                            processed = (
+                                self.extract_from_file_v1(user_id, file_obj, mtime)
+                                if "v1" in single_tar_file
+                                else self.extract_from_file(user_id, file_obj, mtime)
+                            )
+                            if processed == "success":
+                                new_user += 1
                             del file_obj
 
                     # gc.collect()

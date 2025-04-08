@@ -1,6 +1,7 @@
 import os
 
 import joblib
+import glob
 
 from datetime import datetime, timedelta
 
@@ -8,17 +9,22 @@ from tqdm import tqdm
 import pandas as pd
 
 from utils import log_error
+from configs import *
 
-pd.set_option("future.no_silent_downcasting", True)
+# pd.set_option("future.no_silent_downcasting", True)
 
-feature_dir = "/mnt/disk-ccc-covid3-llm/bot-detection"
+base_dir = BASE_DIR
 
-output_dir = "/mnt/disk-ccc-covid3-llm/bot-detection/result"
+profile_dir = PROFILE_DIR
 
-topics = ["abortion", "climate-change", "gun", "sexual-orientation"]
+feature_dir = os.path.join(base_dir, "user_features")
+
+output_dir = os.path.join(base_dir, "result")
+
+os.makedirs(output_dir, exist_ok=True)
 
 
-model_path = "random_forest_model.pkl"
+model_path = os.path.join(base_dir, "models", "random_forest_model.pkl")
 # 加载模型
 model = joblib.load(model_path)
 
@@ -175,6 +181,56 @@ def merge(topic):
     print(f"Bot ratio: {bot_count / predicted_num}")
 
 
+def process_all_users():
+    parquet_files = glob.glob(os.path.join(feature_dir, "*.parquet"))
+
+    for single_file in parquet_files:
+        print(f"Processing {single_file}")
+
+        feature = pd.read_parquet(single_file, engine="fastparquet")
+
+        predictions, probabilities = predict_with_model(model, feature)
+
+        # 保留id, predictions, prababilities
+        result = feature[["id"]].copy()
+        result.loc[:, "predictions"] = predictions
+        result.loc[:, "probabilities"] = probabilities
+
+        output_path = os.path.join(output_dir, single_file.split("/")[-1])
+        result.to_parquet(output_path, engine="fastparquet")
+
+
+def merge_all_bots():
+    """
+    整理一个bot 账户的列表
+    """
+    parquet_files = glob.glob(os.path.join(output_dir, "*.parquet"))
+
+    all_bots = set()
+
+    total_accounts = 0
+
+    for single_file in parquet_files:
+        feature = pd.read_parquet(single_file, engine="fastparquet")
+        total_accounts += feature.shape[0]
+
+        # 只保留bot
+        feature = feature[feature["predictions"] == 1]
+
+        all_bots.update(feature["id"].tolist())
+        # print(feature.shape)
+
+    print(f"Total bots: {len(all_bots)}")
+    print(f"Total accounts: {total_accounts}")
+    print(f"Total bot ratio: {len(all_bots) / total_accounts}")
+
+    # 将所有的bot id写入json
+    import json
+
+    with open(os.path.join(output_dir, "all_bots.json"), "w") as f:
+        json.dump(list(all_bots), f)
+
+
 if __name__ == "__main__":
-    for topic in topics:
-        process_topic(topic)
+    process_all_users()
+    merge_all_bots()
