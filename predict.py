@@ -181,6 +181,26 @@ def merge(topic):
     print(f"Bot ratio: {bot_count / predicted_num}")
 
 
+def following_count():
+    parquet_files = glob.glob(os.path.join(feature_dir, "*.parquet"))
+    total_users = 0
+    total_following = 0
+    request_count = 0
+
+    for single_file in parquet_files:
+        feature = pd.read_parquet(single_file, engine="fastparquet")
+        total_users += feature.shape[0]
+        total_following += feature["friends_count"].sum()
+
+        # 对于每一个用户，计算friends_count % 70 + 1
+        feature["request_count"] = feature["friends_count"] % 70 + 1
+        request_count += feature["request_count"].sum()
+
+    print(f"Total users: {total_users}")
+    print(f"Total following: {total_following}")
+    print(f"Total request count: {request_count}")
+
+
 def process_all_users():
     parquet_files = glob.glob(os.path.join(feature_dir, "*.parquet"))
 
@@ -232,5 +252,6 @@ def merge_all_bots():
 
 
 if __name__ == "__main__":
-    process_all_users()
-    merge_all_bots()
+    # process_all_users()
+    # merge_all_bots()
+    following_count()
