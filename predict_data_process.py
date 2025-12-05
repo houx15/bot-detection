@@ -2,6 +2,8 @@ import os
 import json
 import ijson
 
+import fire
+
 import gc
 
 import tarfile
@@ -37,15 +39,59 @@ topics = ["abortion", "climate-change", "gun", "sexual-orientation"]
 # topics = ["climate-change", "gun", "sexual-orientation"]
 
 
-text_dir = ""
-relevance_dir = ""
+text_dir = "/scratch/network/COVID3/data-tweet"
+relevance_dir = "/scratch/network/COVID3/data-relevance"
+
+# text_folder_mapping = {
+#     "gun": "gun-opinion",
+#     "climate": "climate-change-opinion",
+#     "abortion": "abortion-opinion",
+#     "sexual": "sexual-orientation-opinion",
+# }
+
+relevance_folder_mapping = {
+    "abo": "abortion",
+    "clc": "climate",
+    "gun": "gun",
+    "sxo": "sexual",
+}
+
+old_text_folder_mapping = {
+    "gun": "gun",
+    "clc": "climate-change",
+    "abo": "abortion",
+    "sxo": "sexual-orientation",
+}
 
 text_folder_mapping = {
-    "gun": "gun-opinion",
-    "climate": "climate-change-opinion",
-    "abortion": "abortion-opinion",
-    "sexual": "sexual-orientation-opinion",
+    "abo": "abortion-merge",
+    "clc": "climate-change-merge",
+    "gun": "gun-merge",
+    "sxo": "sexual-orientation-merge",
+    "vac": "vaccine-mandate",
+    "obe": "obesity",
+    "soc": "social-media",
+    "dpp": "death-penalty",
+    "hwm": "homework",
+    "minwage": "minimum-wage",
+    "swe": "sex-work-legalization",
+    "ubi": "universal-basic-income",
 }
+
+topics = [
+    "gun",
+    "clc",
+    "abo",
+    "sxo",
+    "vac",
+    "obe",
+    "soc",
+    "dpp",
+    "hwm",
+    "minwage",
+    "swe",
+    "ubi",
+]
 
 
 def process_single_file(tweet_df, users_df):
@@ -220,12 +266,62 @@ def process_topic_feature_extraction(topic):
     # os.system(f"rm -rf {os.path.join(data_dir, topic)}")
 
 
+def merge_old_relevance_opinion():
+    start_date = datetime(2006, 1, 1)
+    end_date = datetime(2023, 6, 1)
+
+    current_date = start_date
+
+    date_range = [
+        current_date + timedelta(days=i) for i in range((end_date - start_date).days)
+    ]
+    for topic, relevance_folder in relevance_folder_mapping.items():
+        print(f"Processing {topic}")
+        for date in date_range:
+            date_str = date.strftime("%Y-%m-%d")
+            text_file = os.path.join(
+                text_dir,
+                old_text_folder_mapping[topic] + "-opinion",
+                f"{date_str}-text.pickle4",
+            )
+            if not os.path.exists(text_file):
+                continue
+
+            opinion_file = os.path.join(
+                text_dir,
+                old_text_folder_mapping[topic] + "-opinion",
+                f"{date_str}-opinion.pickle4",
+            )
+            # relevance_file = os.path.join(relevance_dir, relevance_folder + "-relevance", f"{date_str}-relevance.pickle4")
+            if not os.path.exists(opinion_file):
+                continue
+
+            text_data = pd.read_pickle(text_file)
+            text_data = text_data[["author_id", "tweet"]]
+            # relevance_data = pd.read_pickle(relevance_file)
+            opinion_data = pd.read_pickle(opinion_file)
+            opinion_data = opinion_data[["relevance", "opinion"]]
+            # opinion data与text data的index都是tweet_id 按照index merge，更新text data
+            text_data = text_data.merge(
+                opinion_data, left_index=True, right_index=True, how="left"
+            )
+
+            output_dir = os.path.join(
+                text_dir,
+                text_folder_mapping[topic] + "-opinion",
+            )
+
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+
+            text_data.to_pickle(os.path.join(output_dir, f"{date_str}-text.pickle4"))
+
+
 def get_all_relevant_user_ids():
     """
     只处理relevant的部分
     """
     unique_user_set = set()
-    topics = ["gun", "climate", "abortion", "sexual"]
     start_date = datetime(2006, 1, 1)
     end_date = datetime(2023, 6, 1)
 
@@ -236,30 +332,37 @@ def get_all_relevant_user_ids():
     ]
 
     for topic in topics:
-        topic_text_folder = os.path.join(text_dir, text_folder_mapping[topic])
-        topic_relevance_folder = os.path.join(relevance_dir, f"{topic}-relevance")
+        topic_text_folder = os.path.join(
+            text_dir, text_folder_mapping[topic] + "-opinion"
+        )
+        # topic_relevance_folder = os.path.join(relevance_dir, f"{topic}-relevance")
 
-        for date in tqdm(date_range, desc=f"processing {topic}"):
+        for date in date_range:
             date_str = date.strftime("%Y-%m-%d")
             text_file = os.path.join(topic_text_folder, f"{date_str}-text.pickle4")
             if not os.path.exists(text_file):
                 continue
 
-            relevance_file = os.path.join(
-                topic_relevance_folder, f"{date_str}-relevance.pickle4"
-            )
-            if not os.path.exists(relevance_file):
-                continue
+            # relevance_file = os.path.join(
+            #     topic_relevance_folder, f"{date_str}-relevance.pickle4"
+            # )
+            # if not os.path.exists(relevance_file):
+            #     continue
 
             data = pd.read_pickle(text_file)
-            try:
-                relevance = pd.read_pickle(relevance_file)
-            except:
-                relevance = pd.read_parquet(relevance_file, engine="fastparquet")
-                relevance = relevance[["relevance"]]
+            if "relevance" not in data.columns:
+                print(f"No relevance column in {text_file}")
 
-            relevance_ids = relevance[relevance["relevance"] == 1].index
-            data = data.loc[relevance_ids]
+                continue
+            # try:
+            #     relevance = pd.read_pickle(relevance_file)
+            # except:
+            #     relevance = pd.read_parquet(relevance_file, engine="fastparquet")
+            #     relevance = relevance[["relevance"]]
+
+            # relevance_ids = relevance[relevance["relevance"] == 1].index
+            # data = data.loc[relevance_ids]
+            data = data[data["relevance"] == 1]
 
             # 将data中的author id添加到set中
             unique_user_set.update(data["author_id"].unique())
@@ -359,6 +462,7 @@ class ExtractUserInfo(object):
         data-twitter-profile-v2-2023feb/1000-profile.pickle4
 
         {'username': 'percep2al', 'name': 'Jordy Mont-Reynaud', 'public_metrics': {'followers_count': 6051, 'following_count': 225, 'tweet_count': 97, 'listed_count': 43}, 'id': '1000', 'profile_image_url': 'https://pbs.twimg.com/profile_images/1511727588045209601/QAToVCGo_normal.jpg', 'verified': False, 'created_at': '2006-07-15T08:41:38.000Z'}
+        {'public_metrics': {'followers_count': 1305, 'following_count': 879, 'tweet_count': 1190, 'listed_count': 45}, 'verified': False, 'name': 'Glen （グレン）', 'location': 'United Kingdom', 'id': '280', 'username': 'glen', 'created_at': '2006-05-15T19:04:24.000Z', 'profile_image_url': 'https://pbs.twimg.com/profile_images/1365203647601205252/YVB7SYVU_normal.jpg'}
         """
         try:
             profile = pickle.load(file_obj)
@@ -373,6 +477,7 @@ class ExtractUserInfo(object):
                     "listed_count": profile["public_metrics"]["listed_count"],
                     "statuses_count": profile["public_metrics"]["tweet_count"],
                     "verified": profile["verified"],
+                    "location": profile.get("location", ""),
                     "crawled_at": mtime,
                 }
             )
@@ -413,6 +518,7 @@ class ExtractUserInfo(object):
                     "statuses_count": profile["statuses_count"],
                     "verified": profile["verified"],
                     "crawled_at": mtime,
+                    "location": profile.get("location", ""),
                 }
             )
 
@@ -457,26 +563,27 @@ class ExtractUserInfo(object):
         )
         df["verified"] = df["verified"].astype(int)
         df["verified"].fillna(0, inplace=True)
-        df = df[
-            [
-                "id",
-                "statuses_count",
-                "followers_count",
-                "friends_count",
-                "listed_count",
-                "verified",
-                "tweet_freq",
-                "followers_growth_rate",
-                "friends_growth_rate",
-                "listed_growth_rate",
-                "followers_friends_ratio",
-                "screen_name_length",
-                "num_digits_in_screen_name",
-                "name_length",
-                "num_digits_in_name",
-                "screen_name_likelihood",
-            ]
-        ]
+        # df = df[
+        #     [
+        #         "id",
+        #         "statuses_count",
+        #         "followers_count",
+        #         "friends_count",
+        #         "listed_count",
+        #         "verified",
+        #         "tweet_freq",
+        #         "followers_growth_rate",
+        #         "friends_growth_rate",
+        #         "listed_growth_rate",
+        #         "followers_friends_ratio",
+        #         "screen_name_length",
+        #         "num_digits_in_screen_name",
+        #         "name_length",
+        #         "num_digits_in_name",
+        #         "screen_name_likelihood",
+        #         "location"
+        #     ]
+        # ]
         return df
 
     def save_user_info(self):
@@ -559,8 +666,8 @@ class ExtractUserInfo(object):
             new_user = 0
             target_start = 0
 
-            if single_tar_file == "v2-2023feb":
-                target_start = 33400000
+            # if single_tar_file == "v2-2023feb":
+            #     target_start = 33400000
 
             with tarfile.open(tar_path, "r:gz") as tar:
                 member = tar.next()
@@ -626,7 +733,20 @@ class ExtractUserInfo(object):
             self.save_finished_zip_files()
 
 
-if __name__ == "__main__":
+def find_user_ids():
+    merge_old_relevance_opinion()
+    get_all_relevant_user_ids()
+
+
+def extract():
     extractor = ExtractUserInfo()
-    print("inited")
     extractor.process()
+
+
+if __name__ == "__main__":
+    fire.Fire(
+        {
+            "find": find_user_ids,
+            "extract": extract,
+        }
+    )
