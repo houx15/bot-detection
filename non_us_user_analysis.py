@@ -917,8 +917,16 @@ def word_freq_analysis(texts):
     print(word_freq[:100])
 
 
-def location_identification():
-    all_locations = gather_all_locations()
+def location_identification(location_file: str = None, output_file: str = None):
+    if location_file is None:
+        all_locations = gather_all_locations()
+    else:
+        if os.path.exists(location_file):
+            with open(location_file, "r") as f:
+                all_locations = json.load(f)
+        else:
+            raise FileNotFoundError(f"Location file {location_file} not found")
+
     non_us = set()
     us = set()
     not_sure = set()
@@ -931,7 +939,7 @@ def location_identification():
         # if not re.search(r"[a-zA-Z]", location):
         #     not_sure.add(location)
         #     continue
-        for word in strange + prons:
+        for word in strange: # + prons:
             continue_flag = False
             if word in location.lower():
                 not_sure.add(location)
@@ -1001,14 +1009,32 @@ def location_identification():
                 non_us.add(location)
 
     # 随机打印 undecided中的一百个
-    print(list(undecided)[:1000])
-    word_freq_analysis(list(undecided))
+    # print(list(undecided)[:1000])
+    # word_freq_analysis(list(undecided))
 
     print(
         f"non_us: {len(non_us)}, us: {len(us)}, not_sure: {len(not_sure)}, undecided: {len(undecided)}"
     )
 
-    with open(os.path.join(base_dir, "non_us_user_analysis.json"), "w") as f:
+    default_output_file = os.path.join(base_dir, "non_us_user_analysis.json")
+    if output_file is None:
+        output_file = default_output_file
+    
+    if os.path.exists(default_output_file):
+        with open(default_output_file, "r") as f:
+            existing_data = json.load(f)
+        us_locations = set(existing_data["us"])
+        
+        # 使用集合交集操作找到需要移动的位置，避免在遍历时修改集合
+        to_move_from_not_sure = not_sure & us_locations
+        not_sure -= to_move_from_not_sure
+        us |= to_move_from_not_sure
+        
+        to_move_from_undecided = undecided & us_locations
+        undecided -= to_move_from_undecided
+        us |= to_move_from_undecided
+
+    with open(output_file, "w") as f:
         json.dump(
             {
                 "non_us": list(non_us),
@@ -1021,10 +1047,12 @@ def location_identification():
 
 
 def merge_and_report():
+    base_dir = "ai_atti"
+    gpt_dir = "ai_atti/llm_analysis"
     with open(os.path.join(base_dir, "non_us_user_analysis.json"), "r") as f:
         non_us_user_analysis = json.load(f)
 
-    llm_result = pd.read_parquet(os.path.join("gpt_analysis", "llm_result.parquet"))
+    llm_result = pd.read_parquet(os.path.join(gpt_dir, "llm_result.parquet"))
 
     print(llm_result["result"].value_counts())
     # 0-not_sure, 1-us, 2-non_us, add the locations to the set

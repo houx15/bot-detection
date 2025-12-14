@@ -12,7 +12,6 @@ import time
 
 from configs import *
 
-BASE_DIR = "ai_atti"
 
 class LLMBatch:
     def __init__(self, working_dir, model="gpt-5-mini", mode="test"):
@@ -90,16 +89,29 @@ class LLMBatch:
     def prompt_composer(
         self,
     ):
-        return """Here is a Twitter user's self-entered location. Is this user in the USA?
+        return """You are a precise geolocation classifier for European countries.
+You will receive a Twitter user's self-filled location text that has been identified as being in Europe.
+Your task is to determine which specific European country this location belongs to.
 
-Please reply with only one number:
-0: cannot tell, or this is not a valid location on the Earth
+Reply with ONLY the ISO 3166-1 alpha-2 country code (2 uppercase letters) or "unknown" if you cannot determine the country.
 
-1: possibly in the USA
+Valid European country ISO codes:
+AL (Albania), AD (Andorra), AT (Austria), BY (Belarus), BE (Belgium), BA (Bosnia and Herzegovina),
+BG (Bulgaria), HR (Croatia), CY (Cyprus), CZ (Czechia), DK (Denmark), EE (Estonia),
+FI (Finland), FR (France), DE (Germany), GR (Greece), HU (Hungary), IS (Iceland),
+IE (Ireland), IT (Italy), LV (Latvia), LI (Liechtenstein), LT (Lithuania), LU (Luxembourg),
+MT (Malta), MD (Moldova), MC (Monaco), ME (Montenegro), NL (Netherlands), MK (North Macedonia),
+NO (Norway), PL (Poland), PT (Portugal), RO (Romania), RU (Russia), SM (San Marino),
+RS (Serbia), SK (Slovakia), SI (Slovenia), ES (Spain), SE (Sweden), CH (Switzerland),
+UA (Ukraine), GB (United Kingdom), VA (Vatican City)
 
-2: not in the USA
+Important instructions:
+- Location strings may be standard place names OR highly non-standard entries: misspellings, transliterations, slang, landmarks, emojis, lat/lon coordinates, abbreviations, iconic buildings, or phonetic variants.
+- You should try to infer the intended country *only if* there is a plausible, geographically grounded interpretation.
+- If the entry does not clearly point to a specific European country, output "unknown".
+- For cities, identify the country they belong to (e.g., "Paris" → FR, "London" → GB).
 
-Please reply with only one number, and avoid any other text.
+Respond ONLY with the ISO code (2 uppercase letters) or "unknown".
 """
 
     def load_content(self):
@@ -107,11 +119,11 @@ Please reply with only one number, and avoid any other text.
             return pd.read_parquet(
                 os.path.join(self.working_dir, "original_data.parquet")
             )
-        with open(os.path.join(BASE_DIR, "non_us_user_analysis.json"), "r") as f:
+        with open(os.path.join(BASE_DIR, "eu_location_by_country.json"), "r") as f:
             data = json.load(f)
 
         # data undecided 是一个列表，转化为df，赋值独一无二的id
-        df = pd.DataFrame(data["undecided"], columns=["location"])
+        df = pd.DataFrame(data["unknown"], columns=["location"])
         df["id"] = df.index
         if self.mode == "test":
             df = df.sample(100)
@@ -126,7 +138,7 @@ Please reply with only one number, and avoid any other text.
         item_count = 0
         file_count = 0
         request_list = []
-        all_custom_ids = []
+        all_custom_ids = set()
 
         for index, row in data.iterrows():
             manual_id = row["id"]
@@ -147,7 +159,7 @@ Please reply with only one number, and avoid any other text.
                 },
             }
             request_list.append(single_request)
-            all_custom_ids.append(manual_id)
+            all_custom_ids.add(manual_id)
             item_count += 1
 
             if item_count % MAX_REQUEST_PER_BATCH == 0:
@@ -261,20 +273,60 @@ Please reply with only one number, and avoid any other text.
 
     def process_prediction_text(self, text):
         """
-        returns: 0/1/2
+        returns: ISO country code (2 uppercase letters) or "unknown"
         """
-        text = text.split("\n")[0]
-        try:
-            return int(text)
-        except ValueError:
-            # 提取整数 0/1/2
-            try:
-                text = re.findall(r"\d", text)[0]
-                return int(text)
-            except:
-                pass
-            print(f"Error processing text: {text}")
-            return None
+        # 移除首尾空白和换行符
+        text = text.strip().split("\n")[0].strip().upper()
+        
+        # 有效的欧洲国家 ISO 代码列表
+        valid_iso_codes = {
+            "AL", "AD", "AT", "BY", "BE", "BA", "BG", "HR", "CY", "CZ", "DK", "EE",
+            "FI", "FR", "DE", "GR", "HU", "IS", "IE", "IT", "LV", "LI", "LT", "LU",
+            "MT", "MD", "MC", "ME", "NL", "MK", "NO", "PL", "PT", "RO", "RU", "SM",
+            "RS", "SK", "SI", "ES", "SE", "CH", "UA", "GB", "UK", "VA", "GI", "TR", "GE", "AZ", "TR"
+        }
+        
+        # 直接匹配 "unknown"
+        if "UNKNOWN" in text or text == "UNK":
+            return "unknown"
+        
+        # 尝试提取 2 个字母的 ISO 代码
+        # 先尝试直接匹配
+        if text in valid_iso_codes:
+            # 将 UK 标准化为 GB
+            if text == "UK":
+                return "GB"
+            if text == "GI":
+                return "GB"
+            return text
+        
+        # 尝试从文本中提取 2 个大写字母
+        iso_match = re.search(r"\b([A-Z]{2})\b", text)
+        if iso_match:
+            iso_code = iso_match.group(1)
+            if iso_code in valid_iso_codes:
+                # 将 UK 标准化为 GB
+                if iso_code == "UK":
+                    return "GB"
+                if iso_code == "GI":
+                    return "GB"
+                return iso_code
+        
+        # 尝试提取任何 2 个连续的大写字母
+        iso_match = re.search(r"([A-Z]{2})", text)
+        if iso_match:
+            iso_code = iso_match.group(1)
+            if iso_code in valid_iso_codes:
+                # 将 UK 标准化为 GB
+                if iso_code == "UK":
+                    return "GB"
+                if iso_code == "GI":
+                    return "GB"
+                return iso_code
+        
+        # 如果都找不到，返回 unknown
+        print(f"Warning: Could not parse ISO code from text: {text}, returning 'unknown'")
+        return "unknown"
 
     def analyze(self):
         print("analyzing")
@@ -311,5 +363,5 @@ Please reply with only one number, and avoid any other text.
 
 
 if __name__ == "__main__":
-    batch = LLMBatch(working_dir="ai_atti/llm_analysis", mode="prod")
+    batch = LLMBatch(working_dir="eu_country_gpt_analysis", mode="prod")
     batch.process()
